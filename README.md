@@ -1,0 +1,2 @@
+# TradingWatcher
+基于TradingView开发的金融交易技术分析客户端
