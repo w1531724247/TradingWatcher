@@ -13,5 +13,12 @@ TradingWatcher支持多周期同屏K线回放,可模拟股票价格实时跳动,
 
 TradingWatcher更有订单流足迹图表,精准显示各价位成交量分布,帮助您快速精准判断市场行情.
 
+TradingWatcher图表界面基于TradingView开发,拥有海量的技术指标,可满足您的各种交易需求.
+
+TradingWatcher支持多图同屏,可同时查看多个时间周期的行情,帮您更好的把我行情走势.
+
+TradingWatcher支持无限多开,可同时查看多个金融产品的行情,帮您把握更多交易机会.
+
 # 软件截图
-![image](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/home@2x.png?raw=true)
+![首页](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/home@2x.png?raw=true)
+![多图同屏](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/multi_window@2x.png?raw=true)
