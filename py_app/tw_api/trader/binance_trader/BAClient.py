@@ -1,7 +1,8 @@
 # 
 
 from tw_api.server.dbmodels.kv_info import KVInfo
-
+import random
+import threading
 from .BATrader import BATrader
 from .UMBinance import UMBinance
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
@@ -21,6 +22,18 @@ class BAClient(BATrader):
     ba_secret_key = None
     um_ws_client_connected = False
     um_auth_ws_client_connected = False
+    
+    # 添加重连相关参数
+    reconnect_attempts = 0
+    max_reconnect_attempts = 10
+    base_reconnect_delay = 5  # 基础重连延迟(秒)
+    max_reconnect_delay = 300  # 最大重连延迟(秒)
+    
+    # 添加心跳检测相关参数
+    last_heartbeat_time = 0
+    heartbeat_interval = 30  # 心跳间隔(秒)
+    heartbeat_timeout = 60  # 心跳超时(秒)
+    heartbeat_timer = None
 
     stream_url = "wss://fstream.binance.com"
     base_url = "https://fapi.binance.com"
@@ -28,102 +41,247 @@ class BAClient(BATrader):
     def __del__(self):
         class_name = self.__class__.__name__
         print(class_name, '__del__ 销毁')    
+        # 清理定时器
+        self._clear_timers()
+    
+    def _clear_timers(self):
+        """清理所有定时器"""
+        # 原代码缺少对connection_check_timer的清理
+        for timer in [self.updateListenKeyTimer, self.updateInfoTimer, 
+                    self.autoReconnectTimer, self.heartbeat_timer, 
+                    self.connection_check_timer]:  # ✅ 已包含所有定时器
+            if timer is not None and timer.is_alive():
+                timer.cancel()
     
     listenKey: str = None
     updateListenKeyTimer : Timer = None
     updateInfoTimer : Timer = None
     autoReconnectTimer : Timer = None
+    connection_check_timer : Timer = None  # 新增连接状态检查定时器
 
     um_http_client: UMBinance = None
     um_ws_client: UMFuturesWebsocketClient = None
 
+    # 更新WebSocket事件处理函数，添加时间戳记录
     def um_ws_client_on_close(self, *args, **kwargs):
-        print(f'um_ws_client_on_close args: {args}, kwargs: {kwargs}')
+        logger.warning(f'um_ws_client_on_close args: {args}, kwargs: {kwargs}')
         self.um_ws_client_connected = False
+        # 触发重连
+        self._schedule_reconnect(is_auth=False)
     
     def um_ws_client_on_error(self, *args, **kwargs):
-        print(f'um_ws_client_on_error args: {args}, kwargs: {kwargs}')
+        logger.error(f'um_ws_client_on_error args: {args}, kwargs: {kwargs}')
         self.um_ws_client_connected = False
+        # 触发重连
+        self._schedule_reconnect(is_auth=False)
 
     def um_ws_client_on_ping(self, *args, **kwargs):
-        print(f'um_ws_client_on_ping args: {args}, kwargs: {kwargs}')
         self.um_ws_client_connected = True
+        self.last_heartbeat_time = time.time()
+        logger.debug(f'um_ws_client_on_ping: 收到ping，更新心跳时间 {self.last_heartbeat_time}')
 
     def um_ws_client_on_pong(self, *args, **kwargs):
-        print(f'um_ws_client_on_pong args: {args}, kwargs: {kwargs}')
         self.um_ws_client_connected = True
+        self.last_heartbeat_time = time.time()
+        logger.debug(f'um_ws_client_on_pong: 收到pong，更新心跳时间 {self.last_heartbeat_time}')
     
     def um_auth_ws_client_on_close(self, *args, **kwargs):
-        print(f'um_auth_ws_client_on_close args: {args}, kwargs: {kwargs}')
+        logger.warning(f'um_auth_ws_client_on_close args: {args}, kwargs: {kwargs}')
         self.um_auth_ws_client_connected = False
+        # 触发重连
+        self._schedule_reconnect(is_auth=True)
     
     def um_auth_ws_client_on_error(self, *args, **kwargs):
-        print(f'um_auth_ws_client_on_error args: {args}, kwargs: {kwargs}')
+        logger.error(f'um_auth_ws_client_on_error args: {args}, kwargs: {kwargs}')
         self.um_auth_ws_client_connected = False
+        # 触发重连
+        self._schedule_reconnect(is_auth=True)
 
     def um_auth_ws_client_on_ping(self, *args, **kwargs):
-        print(f'um_auth_ws_client_on_ping args: {args}, kwargs: {kwargs}')
         self.um_auth_ws_client_connected = True
+        self.last_heartbeat_time = time.time()
+        logger.debug(f'um_auth_ws_client_on_ping: 收到ping，更新心跳时间 {self.last_heartbeat_time}')
 
     def um_auth_ws_client_on_pong(self, *args, **kwargs):
-        print(f'um_auth_ws_client_on_pong args: {args}, kwargs: {kwargs}')
         self.um_auth_ws_client_connected = True
+        self.last_heartbeat_time = time.time()
+        logger.debug(f'um_auth_ws_client_on_pong: 收到pong，更新心跳时间 {self.last_heartbeat_time}')
 
-    def auto_reconnected_if_need(self):
-        if self.user_data_watching == True:
-            if self.um_auth_ws_client_connected == False:
-                # 需要重连
-                try:
-                    if self.um_auth_ws_client is not None:
+    def _schedule_reconnect(self, is_auth=False):
+        """使用指数退避策略安排重连"""
+        if self.reconnect_attempts >= self.max_reconnect_attempts:
+            logger.error(f"已达到最大重连尝试次数 ({self.max_reconnect_attempts})，停止重连")
+            return
+        
+        # 计算延迟时间（指数退避）
+        delay = min(self.base_reconnect_delay * (2 ** self.reconnect_attempts), 
+               self.max_reconnect_delay)
+        # 添加随机抖动，避免多个客户端同时重连
+        delay = delay * (0.8 + 0.4 * random.random())
+        
+        logger.info(f"计划在 {delay:.2f} 秒后进行第 {self.reconnect_attempts + 1} 次重连尝试")
+        
+        # 创建定时器进行重连
+        timer = Timer(delay, self._do_reconnect, args=[is_auth])
+        timer.daemon = True
+        timer.start()
+        
+        self.reconnect_attempts += 1
+    
+    def _do_reconnect(self, is_auth=False):
+        """执行实际的重连操作"""
+        try:
+            if is_auth:
+                logger.info("正在重连认证WebSocket...")
+                if self.um_auth_ws_client is not None:
+                    try:
+                        # 确保停止WebSocket连接
                         self.um_auth_ws_client.stop()
+                        # 关闭底层连接
+                        if hasattr(self.um_auth_ws_client, '_conn') and self.um_auth_ws_client._conn:
+                            self.um_auth_ws_client._conn.close()
+                        # 等待连接完全关闭
+                        time.sleep(0.5)
+                    except Exception as e:
+                        logger.error(f"关闭认证WebSocket连接时出错: {e}")
+                    finally:
+                        # 无论如何都要清除引用
                         del self.um_auth_ws_client
                         self.um_auth_ws_client = None
-                    else:
-                        pass
-                    listenKeyInfos = self.um_auth_http_client.new_listen_key()
-                    self.listenKey = listenKeyInfos["listenKey"]
-                    self.um_auth_ws_client = UMFuturesWebsocketClient(stream_url=self.stream_url, on_message=self.auth_um_ws_client_on_message, on_close=self.um_auth_ws_client_on_close, on_error=self.um_auth_ws_client_on_error, on_ping=self.um_auth_ws_client_on_ping, on_pong=self.um_auth_ws_client_on_pong)
-                    self.um_auth_ws_client.user_data(
-                        listen_key=self.listenKey,
-                        id=self.ms_ts()
-                    )
-                except Exception as exp:
-                    logger.debug(f'auto_reconnected_if_need ---- um_auth_ws_client_connected --->{exp}')
-                finally:
-                    pass
-            else:
-                pass
-        else:
-            pass
-        if self.ticker_watching == True:
-            if self.um_ws_client_connected == False:
-                # 需要重连
-                if self.um_ws_client is not None:
-                    self.um_ws_client.stop()
-                    del self.um_ws_client
-                    self.um_ws_client = None
-                else:
-                    pass
-                self.um_ws_client = UMFuturesWebsocketClient(stream_url=self.stream_url, on_message=self.um_ws_client_on_message, on_close=self.um_ws_client_on_close, on_error=self.um_ws_client_on_error, on_ping=self.um_ws_client_on_ping, on_pong=self.um_ws_client_on_pong)
-                self.um_ws_client.ticker(
+                
+                listenKeyInfos = self.um_auth_http_client.new_listen_key()
+                self.listenKey = listenKeyInfos["listenKey"]
+                self.um_auth_ws_client = UMFuturesWebsocketClient(
+                    stream_url=self.stream_url, 
+                    on_message=self.auth_um_ws_client_on_message, 
+                    on_close=self.um_auth_ws_client_on_close, 
+                    on_error=self.um_auth_ws_client_on_error, 
+                    on_ping=self.um_auth_ws_client_on_ping, 
+                    on_pong=self.um_auth_ws_client_on_pong
+                )
+                self.um_auth_ws_client.user_data(
+                    listen_key=self.listenKey,
                     id=self.ms_ts()
                 )
+                logger.info("认证WebSocket重连成功")
+                self.um_auth_ws_client_connected = True
             else:
-                pass
-        else:
-            pass
-        # 5分钟重置一次
-        self.um_ws_client_connected = False
-        self.um_auth_ws_client_connected = False
+                logger.info("正在重连公共WebSocket...")
+                if self.um_ws_client is not None:
+                    try:
+                        # 确保停止WebSocket连接
+                        self.um_ws_client.stop()
+                        # 关闭底层连接
+                        if hasattr(self.um_ws_client, '_conn') and self.um_ws_client._conn:
+                            self.um_ws_client._conn.close()
+                        # 等待连接完全关闭
+                        time.sleep(0.5)
+                    except Exception as e:
+                        logger.warning(f"关闭公共WebSocket连接时出错: {e}")
+                    finally:
+                        # 无论如何都要清除引用
+                        del self.um_ws_client
+                        self.um_ws_client = None
+                
+                self.um_ws_client = UMFuturesWebsocketClient(
+                    stream_url=self.stream_url, 
+                    on_message=self.um_ws_client_on_message, 
+                    on_close=self.um_ws_client_on_close, 
+                    on_error=self.um_ws_client_on_error, 
+                    on_ping=self.um_ws_client_on_ping, 
+                    on_pong=self.um_ws_client_on_pong
+                )
+                self.um_ws_client.ticker(id=self.ms_ts())
+                logger.info("公共WebSocket重连成功")
+                self.um_ws_client_connected = True
+            
+            # 重连成功，重置重连尝试次数
+            self.reconnect_attempts = 0
+            
+        except Exception as exp:
+            logger.error(f'重连失败: {exp}')
+            # 重连失败，安排下一次重连
+            self._schedule_reconnect(is_auth)
+    
+    def start_connection_check(self):
+        """启动连接状态检查定时器"""
+        if self.connection_check_timer is not None and self.connection_check_timer.is_alive():
+            self.connection_check_timer.cancel()
+        
+        self.connection_check_timer = Timer(self.heartbeat_interval, self.check_connection_status)
+        self.connection_check_timer.daemon = True
+        self.connection_check_timer.start()
+        logger.debug("已启动连接状态检查定时器")
+    
+    def check_connection_status(self):
+        """检查连接状态，如果超时则重连"""
+        current_time = time.time()
+        
+        # 添加未初始化状态的判断
+        if self.last_heartbeat_time == 0:  # ✅ 添加初始化逻辑
+            self.last_heartbeat_time = current_time
+            return
+
+        # 检查心跳超时
+        if self.last_heartbeat_time > 0 and (current_time - self.last_heartbeat_time) > self.heartbeat_timeout:
+            logger.warning(f"心跳超时: 上次心跳时间 {self.last_heartbeat_time}, 当前时间 {current_time}")
+            
+            # 检查公共WebSocket
+            if self.ticker_watching and not self.um_ws_client_connected:
+                logger.warning("公共WebSocket连接已断开，尝试重连")
+                self._do_reconnect(is_auth=False)
+            
+            # 检查认证WebSocket
+            if self.user_data_watching and not self.um_auth_ws_client_connected:
+                logger.warning("认证WebSocket连接已断开，尝试重连")
+                self._do_reconnect(is_auth=True)
+        
+        # 主动发送ping以保持连接活跃
+        self._send_ping()
+        
+        # 重新启动定时器
+        self.start_connection_check()
+    
+    def _send_ping(self):
+        """向WebSocket服务器发送ping以保持连接活跃"""
+        try:
+            if self.um_ws_client is not None and self.ticker_watching:
+                self.um_ws_client.ping(id=self.ms_ts())
+                logger.debug("已向公共WebSocket发送ping")
+            
+            if self.um_auth_ws_client is not None and self.user_data_watching:
+                self.um_auth_ws_client.ping(id=self.ms_ts())
+                logger.debug("已向认证WebSocket发送ping")
+        except Exception as e:
+            logger.error(f"发送ping失败: {e}")
+
+    def auto_reconnected_if_need(self):
+        """检查并自动重连WebSocket连接"""
+        logger.debug("执行自动重连检查...")
+        
+        if self.user_data_watching and not self.um_auth_ws_client_connected:
+            logger.warning("认证WebSocket未连接，尝试重连")
+            self._do_reconnect(is_auth=True)
+        
+        if self.ticker_watching and not self.um_ws_client_connected:
+            logger.warning("公共WebSocket未连接，尝试重连")
+            self._do_reconnect(is_auth=False)
+        
         # 重新启动定时器
         self.start_autoReconnectTimer()
     
     def start_autoReconnectTimer(self):
+        """启动自动重连定时器"""
+        if self.autoReconnectTimer is not None and self.autoReconnectTimer.is_alive():
+            self.autoReconnectTimer.cancel()
+        
         # 每4.5分钟执行一次
         self.autoReconnectTimer = Timer(60*4.5, self.auto_reconnected_if_need)
+        self.autoReconnectTimer.daemon = True
         self.autoReconnectTimer.start()
+        logger.debug("已启动自动重连定时器")
 
-
+    # 在初始化方法中添加启动连接检查
     def initPublicClientIfNeed(self, data: dict):
         result_info = {"code": 0, "msg": "success"}
         if self.ticker_watching:
@@ -153,44 +311,15 @@ class BAClient(BATrader):
             self.start_update_local_info_timer()
             # 启动定时自动重连
             self.start_autoReconnectTimer()
+            # 启动连接状态检查
+            self.start_connection_check()
+            # 初始化心跳时间
+            self.last_heartbeat_time = time.time()
         except Exception as e:
             print('initPublicClientIfNeed:', e)
             result_info = {"code": -200, "msg": "访问国际互联网失败"}
         finally:
             return result_info
-        
-    um_auth_http_client: UMBinance = None
-    um_auth_ws_client: UMFuturesWebsocketClient = None
-    def initPrivateClientIfNeed(self, data: dict):
-        print('initPrivateClientIfNeed--end--', data)
-        api_key = data["api_key"]
-        self.ba_api_key = api_key
-        secret_key = data["secret_key"]
-        self.ba_secret_key = secret_key
-        if self.um_auth_http_client is None:
-            self.um_auth_http_client = UMBinance(base_url=self.base_url, key=api_key, secret=secret_key)
-            self.um_auth_http_client.js_port = PathTools.js_port
-        else:
-            pass
-        if self.um_auth_ws_client is None:
-            self.um_auth_ws_client = UMFuturesWebsocketClient(stream_url=self.stream_url, on_message=self.auth_um_ws_client_on_message, on_close=self.um_auth_ws_client_on_close, on_error=self.um_auth_ws_client_on_error, on_ping=self.um_auth_ws_client_on_ping, on_pong=self.um_auth_ws_client_on_pong)
-        else:
-            pass
-        resp = {'code':0, 'status':'success'}
-        try:
-            # 获取持仓方向
-            self.get_position_mode()
-            # 初始化用户信息(获取仓位信息,余额信息)
-            self.init_user_data_infos()
-            # 获取所有挂单信息
-            self.init_open_orders()
-            # 订阅用户数据
-            self.start_watch_user_data(data={})
-        except Exception as e:
-            print('initPrivateClientIfNeed---Exception----:', e)
-            {'code':-200, 'status':'fail'}
-        finally:
-            return resp
         
     exchangeInfos: dict = None
     def get_exchange_info(self):
@@ -771,19 +900,20 @@ class BAClient(BATrader):
 
         return p_infos
 
+    # 适配小数精度
+    def adapter_float(self, tick, f_num):
+        tick_dec = Decimal(str(tick))
+        num_dec = Decimal(str(f_num))
+        # 使用ROUND_DOWN确保价格向下取整到tick_size的倍数
+        adjusted_num = (num_dec / tick_dec).quantize(Decimal('1'), rounding=ROUND_DOWN) * tick_dec
+        return str(adjusted_num)
+
     def fix_order_price(self, symbol: str, price: str):
         limit_infos = self.get_place_order_limit_infos(symbol=symbol)
         pricePrecision = limit_infos['pricePrecision']
         pricePrecision = int(pricePrecision)
         tickSize = limit_infos['tickSize']
-        tickSize = float(tickSize)
-        price = float(price)
-        fixed_price = math.ceil(price/tickSize)*tickSize
-        if pricePrecision > 0:
-            # pricePrecision = pricePrecision - 1
-            fixed_price = "{:0.{}f}".format(fixed_price, pricePrecision)
-        else:
-            fixed_price = str(int(fixed_price))
+        fixed_price = self.adapter_float(tick=tickSize, f_num=price)
         logger.debug(f'fixed_price---->{fixed_price}')
 
         return fixed_price
@@ -805,17 +935,10 @@ class BAClient(BATrader):
         quantityPrecision = limit_infos['quantityPrecision']
         quantityPrecision = int(quantityPrecision)
         stepSize = limit_infos['stepSize']
-        stepSize = float(stepSize)
-        amount = math.fabs(float(amount))
-        fixed_amount = math.ceil(amount / stepSize) * stepSize
-        if quantityPrecision > 0:
-            fixed_amount = "{:0.{}f}".format(fixed_amount, quantityPrecision)
-            fixed_amount = float(fixed_amount)
-        else:
-            fixed_amount = int(fixed_amount)
+        fixed_amount = self.adapter_float(tick=stepSize, f_num=amount)
         logger.debug(f'fixed_amount----{fixed_amount}')
 
-        return str(fixed_amount)
+        return fixed_amount
 
     def get_place_order_limit_infos(self, symbol: str):
         exchangeInfos = self.get_exchange_info()

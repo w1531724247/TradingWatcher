@@ -1,57 +1,119 @@
 # 
 
 class TWBaseShape:
+    """
+    TradingView 图形基类，用于封装 charting_library 中通过 createMultipointShape 
+    向图表添加的图形属性与方法。
+    
+    支持将类属性转换为 TradingView 所需的形状配置，并提供单点和多点图形的信息生成。
+    """
     shape_name = ''
-
+    shape = ''  # 基类中定义，子类必须覆盖
+    
+    def __init__(self, name=None):
+        """
+        初始化图形对象
+        
+        Args:
+            name (str, optional): 图形名称，如果提供则覆盖类属性
+        """
+        if name:
+            self.shape_name = name
+    
     def props_from_dict(self, props: dict) -> "TWBaseShape":
+        """
+        从字典中设置对象属性
+        
+        Args:
+            props (dict): 包含属性名和值的字典
+            
+        Returns:
+            TWBaseShape: 返回对象自身，支持链式调用
+            
+        Raises:
+            ValueError: 如果 props 不是字典类型
+            AttributeError: 如果设置属性时出错
+        """
         # 验证props的类型
         if not isinstance(props, dict):
             raise ValueError("props must be a dictionary")
 
-        # 优化：可以考虑提供一个允许列表或属性名的正则表达式来过滤不允许的属性名
-        # 这里简单地阻止以'_'开头的私有属性被设置
+        # 过滤并设置属性
         for key, value in props.items():
-            if not key.startswith("_"):
+            # 阻止设置私有属性或方法
+            if not key.startswith("_") and not callable(getattr(self.__class__, key, None)):
                 try:
+                    # 添加类型检查和转换
+                    current_value = getattr(self, key, None)
+                    if current_value is not None:
+                        # 尝试保持类型一致
+                        if isinstance(current_value, bool) and not isinstance(value, bool):
+                            value = bool(value)
+                        elif isinstance(current_value, int) and not isinstance(value, int):
+                            value = int(value)
+                        elif isinstance(current_value, float) and not isinstance(value, (int, float)):
+                            value = float(value)
+                        elif isinstance(current_value, str) and not isinstance(value, str):
+                            value = str(value)
+                            
                     setattr(self, key, value)
-                except AttributeError as e:
-                    # 异常处理：记录或抛出异常，这里选择打印异常信息
-                    # 实际应用中，可能需要改为记录到日志文件或抛出自定义异常
-                    print(f"Error setting attribute {key}: {e}")
+                except (AttributeError, ValueError, TypeError) as e:
+                    # 使用异常处理，记录错误但不中断流程
+                    import logging
+                    logging.getLogger().warning(f"Error setting attribute {key}: {e}")
 
         return self
     
     def getOverridesFromProps(self):
         """
         将对象的属性（包括继承的属性）转换为字典。
-        :param self: 对象实例
-        :return: 包含对象所有属性的字典
+        
+        Returns:
+            dict: 包含对象所有非空属性的字典
         """
-        # 获取对象所属类的字典，包括其继承的类的属性
-        class_dict = self.__class__.__dict__
-        
-        # 过滤掉非实例属性（如方法等）
-        instance_attrs = {k: v for k, v in class_dict.items() if not callable(v) and not k.startswith("__")}
-        
-        # 递归处理父类的属性
-        for base in self.__class__.mro()[1:-1]:  # 跳过object基类
-            base_dict = base.__dict__
-            instance_attrs.update({k: v for k, v in base_dict.items() if not callable(v) and not k.startswith("__") and v != ""})
-        
-        self_dict = self.__dict__
-        instance_attrs.update({k: v for k, v in self_dict.items() if not callable(v) and not k.startswith("__") and v != ""})
-
-        # 创建实例属性字典
+        # 使用更高效的属性获取方式
         instance_dict = {}
-        for attr_name in instance_attrs.keys():
-            attr_value = getattr(self, attr_name, None)  # 获取属性值，若不存在则为None
-            instance_dict[attr_name] = attr_value
+        
+        # 先处理实例属性（优先级最高）
+        for key, value in self.__dict__.items():
+            if not callable(value) and not key.startswith("__") and value != "":
+                instance_dict[key] = value
+        
+        # 处理类层次结构中的属性
+        for cls in self.__class__.mro()[:-1]:  # 不包括 object 类
+            for key, value in cls.__dict__.items():
+                # 只处理尚未添加的属性，确保实例属性优先
+                if (key not in instance_dict and 
+                    not callable(value) and 
+                    not key.startswith("__") and 
+                    value != ""):
+                    instance_dict[key] = value
 
         return instance_dict
 
     def shapeInfoWithPoint(self, point: dict):
-        # point = {'time': time, 'price': price}
+        """
+        生成单点图形的配置信息
+        
+        Args:
+            point (dict): 包含 time 和 price 的点位信息，例如 {'time': 1625097600, 'price': 35000}
+            
+        Returns:
+            dict: 完整的图形配置信息
+            
+        Raises:
+            ValueError: 如果 point 格式不正确
+        """
+        # 验证点位格式
+        if not isinstance(point, dict) or 'time' not in point or 'price' not in point:
+            raise ValueError("Point must be a dictionary with 'time' and 'price' keys")
+            
         props = self.getOverridesFromProps()
+        
+        # 确保 shape 属性存在
+        if 'shape' not in props:
+            raise ValueError(f"Missing 'shape' property in {self.__class__.__name__}")
+            
         shape = props.pop('shape')
 
         shape_info = {
@@ -70,9 +132,34 @@ class TWBaseShape:
 
         return shape_info
     
-    def shapeInfoWithPointList(self, point_list: []):
-        # point_list = [{'time': start_ts, 'price': self.high}, {'time': end_ts, 'price': self.low}]
+    def shapeInfoWithPointList(self, point_list):
+        """
+        生成多点图形的配置信息
+        
+        Args:
+            point_list (list): 包含多个点位信息的列表，每个点必须包含 time 和 price
+            
+        Returns:
+            dict: 完整的图形配置信息
+            
+        Raises:
+            ValueError: 如果 point_list 格式不正确
+        """
+        # 验证点位列表
+        if not isinstance(point_list, (list, tuple)) or len(point_list) < 2:
+            raise ValueError("Point list must be a list or tuple with at least 2 points")
+            
+        # 验证每个点的格式
+        for point in point_list:
+            if not isinstance(point, dict) or 'time' not in point or 'price' not in point:
+                raise ValueError("Each point must be a dictionary with 'time' and 'price' keys")
+        
         props = self.getOverridesFromProps()
+        
+        # 确保 shape 属性存在
+        if 'shape' not in props:
+            raise ValueError(f"Missing 'shape' property in {self.__class__.__name__}")
+            
         shape = props.pop('shape')
         
         shape_info = {
@@ -90,6 +177,75 @@ class TWBaseShape:
             }
 
         return shape_info
+    
+    def clone(self):
+        """
+        创建当前图形对象的克隆
+        
+        Returns:
+            TWBaseShape: 克隆的图形对象
+        """
+        import copy
+        return copy.deepcopy(self)
+    
+    def set_properties(self, **kwargs):
+        """
+        设置多个属性值
+        
+        Args:
+            **kwargs: 属性名和值的键值对
+            
+        Returns:
+            TWBaseShape: 返回对象自身，支持链式调用
+        """
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+        return self
+    
+    def to_dict(self):
+        """
+        将整个图形对象转换为字典格式
+        
+        Returns:
+            dict: 包含所有图形信息的字典
+        """
+        props = self.getOverridesFromProps()
+        return {
+            'class_name': self.__class__.__name__,
+            'shape_name': self.shape_name,
+            'properties': props
+        }
+    
+    @classmethod
+    def from_dict(cls, data):
+        """
+        从字典创建图形对象
+        
+        Args:
+            data (dict): 包含图形信息的字典
+            
+        Returns:
+            TWBaseShape: 创建的图形对象
+        """
+        instance = cls()
+        instance.shape_name = data.get('shape_name', '')
+        instance.props_from_dict(data.get('properties', {}))
+        return instance
+    
+    def validate(self):
+        """
+        验证图形对象是否有效
+        
+        Returns:
+            bool: 图形对象是否有效
+            
+        Raises:
+            ValueError: 图形对象无效时的详细信息
+        """
+        if not self.shape:
+            raise ValueError(f"{self.__class__.__name__} missing required 'shape' property")
+        return True
+    
     
 class TWPrice_range(TWBaseShape):
     shape = "price_range"
