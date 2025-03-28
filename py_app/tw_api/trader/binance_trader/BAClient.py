@@ -320,7 +320,40 @@ class BAClient(BATrader):
             result_info = {"code": -200, "msg": "访问国际互联网失败"}
         finally:
             return result_info
-        
+            
+    um_auth_http_client: UMBinance = None
+    um_auth_ws_client: UMFuturesWebsocketClient = None
+    def initPrivateClientIfNeed(self, data: dict):
+        print('initPrivateClientIfNeed--end--', data)
+        api_key = data["api_key"]
+        self.ba_api_key = api_key
+        secret_key = data["secret_key"]
+        self.ba_secret_key = secret_key
+        if self.um_auth_http_client is None:
+            self.um_auth_http_client = UMBinance(base_url=self.base_url, key=api_key, secret=secret_key)
+            self.um_auth_http_client.js_port = PathTools.js_port
+        else:
+            pass
+        if self.um_auth_ws_client is None:
+            self.um_auth_ws_client = UMFuturesWebsocketClient(stream_url=self.stream_url, on_message=self.auth_um_ws_client_on_message, on_close=self.um_auth_ws_client_on_close, on_error=self.um_auth_ws_client_on_error, on_ping=self.um_auth_ws_client_on_ping, on_pong=self.um_auth_ws_client_on_pong)
+        else:
+            pass
+        resp = {'code':0, 'status':'success'}
+        try:
+            # 获取持仓方向
+            self.get_position_mode()
+            # 初始化用户信息(获取仓位信息,余额信息)
+            self.init_user_data_infos()
+            # 获取所有挂单信息
+            self.init_open_orders()
+            # 订阅用户数据
+            self.start_watch_user_data(data={})
+        except Exception as e:
+            print('initPrivateClientIfNeed---Exception----:', e)
+            {'code':-200, 'status':'fail'}
+        finally:
+            return resp
+
     exchangeInfos: dict = None
     def get_exchange_info(self):
         '''
