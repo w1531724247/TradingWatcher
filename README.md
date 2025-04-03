@@ -24,8 +24,8 @@ TradingWatcher实时更新各路大神对<span style="color:OrangeRed;font-size:
 TradingWatcher更有专属<span style="color:OrangeRed;font-size:14px;font-weight:700">金融书库</span>,助您快速成长,拓宽技能树.
 
 # 软件截图
-![首页](https://gitee.com/levi666/TradingWatcher/raw/main/app_show_images/home@2x.png?raw=true)
-![多图同屏](https://gitee.com/levi666/TradingWatcher/raw/main/app_show_images/multi_window@2x.png?raw=true)
-![足迹图](https://gitee.com/levi666/TradingWatcher/raw/main/app_show_images/zujitu@2x.png?raw=true)
-![行情分析](https://gitee.com/levi666/TradingWatcher/raw/main/app_show_images/videos@2x.png?raw=true)
-![金融书库](https://gitee.com/levi666/TradingWatcher/raw/main/app_show_images/books@2x.png?raw=true)
+![首页](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/home@2x.png?raw=true)
+![多图同屏](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/multi_window@2x.png?raw=true)
+![足迹图](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/zujitu@2x.png?raw=true)
+![行情分析](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/videos@2x.png?raw=true)
+![金融书库](https://github.com/w1531724247/TradingWatcher/blob/main/app_show_images/books@2x.png?raw=true)
