@@ -28,8 +28,6 @@ origins = [
     "http://localhost:8268",
     "http://localhost:*",
     "https://app.forex-investing.net",
-    "https://app.tradingwatcher.com",
-    "http://app.tradingwatcher.com.s3-website-ap-southeast-1.amazonaws.com",
 ]
 
 # 添加CORS中间件

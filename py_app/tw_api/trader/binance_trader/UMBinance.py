@@ -55,10 +55,9 @@ class UMBinance(UMFutures):
             print(f'synced---->{fn_name}', {**args})
             result = getattr(self, fn_name)(**args)
         except Exception as exp:
-            logger.debug(f'synced--error-->{exp}')
             (code, err_code, err_msg, extra) = exp.args
             self.handle_error_with_code(err_code=err_code)
-            print(f'synced--error-->{exp}')
+            logger.error(f'synced--error-->{exp}')
         finally:
             if fn_name not in exclude_fn_list:
                 with self._cache_lock:

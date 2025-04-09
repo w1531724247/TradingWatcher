@@ -54,7 +54,7 @@ class PathBridge(BaseBridge):
             else:
                 print(f"Platform not supported: {sys.platform}")
         except Exception as e:
-            print(f"Failed to open file: {e}")
+            logger.error(f"Failed to open file: {e}")
         finally:
             return {"log_file_path": PathTools._log_file_path}
         
@@ -75,7 +75,7 @@ class PathBridge(BaseBridge):
                 last_line = linecache.getline(file, line_index)
                 log_lines.append(last_line.strip())
         except Exception as e:
-            print(f"Failed to open file: {e}")
+            logger.error(f"Failed to open file: {e}")
         finally:
             return {"log_lines": log_lines}
 
@@ -101,14 +101,14 @@ class PathBridge(BaseBridge):
             func_params = func_info['data']
             result = getattr(self, func_name)(func_params)
         except Exception as exp:
-            logger.debug(f'{datetime.datetime.now()} call_python_method--error--> {exp} {traceback.print_exc()}');
+            logger.error(f'{datetime.datetime.now()} call_python_method--error--> {exp} {traceback.print_exc()}');
         finally:
             if result is None:
                 result = {}
             elif isinstance(result, dict):
                 pass
             else:
-                logger.debug(f'不合适的返回值类型:{type(result)}, {result}, {func_info}')
+                logger.error(f'不合适的返回值类型:{type(result)}, {result}, {func_info}')
                 result = {}
 
             return result

@@ -2,6 +2,7 @@
 
 from tw_api.server.dbmodels.kv_info import KVInfo
 import random
+from decimal import Decimal, ROUND_DOWN
 import threading
 from .BATrader import BATrader
 from .UMBinance import UMBinance
@@ -246,11 +247,11 @@ class BAClient(BATrader):
         """向WebSocket服务器发送ping以保持连接活跃"""
         try:
             if self.um_ws_client is not None and self.ticker_watching:
-                self.um_ws_client.ping(id=self.ms_ts())
+                self.um_ws_client.ping()
                 logger.debug("已向公共WebSocket发送ping")
             
             if self.um_auth_ws_client is not None and self.user_data_watching:
-                self.um_auth_ws_client.ping(id=self.ms_ts())
+                self.um_auth_ws_client.ping()
                 logger.debug("已向认证WebSocket发送ping")
         except Exception as e:
             logger.error(f"发送ping失败: {e}")
@@ -316,11 +317,11 @@ class BAClient(BATrader):
             # 初始化心跳时间
             self.last_heartbeat_time = time.time()
         except Exception as e:
-            print('initPublicClientIfNeed:', e)
+            logger.error('initPublicClientIfNeed:', e)
             result_info = {"code": -200, "msg": "访问国际互联网失败"}
         finally:
             return result_info
-            
+    
     um_auth_http_client: UMBinance = None
     um_auth_ws_client: UMFuturesWebsocketClient = None
     def initPrivateClientIfNeed(self, data: dict):
@@ -349,7 +350,7 @@ class BAClient(BATrader):
             # 订阅用户数据
             self.start_watch_user_data(data={})
         except Exception as e:
-            print('initPrivateClientIfNeed---Exception----:', e)
+            logger.error('initPrivateClientIfNeed---Exception----:', e)
             {'code':-200, 'status':'fail'}
         finally:
             return resp
