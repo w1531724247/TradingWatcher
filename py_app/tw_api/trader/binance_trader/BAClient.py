@@ -644,22 +644,26 @@ class BAClient(BATrader):
                 if to_price < from_price and lastPrice <= to_price and valid == 'valid':
                     a_info['status'] = 'invalid'
                     a_info['detail_msg'] = f'价格提醒:{symbol}当前价格{lastPrice}<={to_price}'
-                    a_info['md_msg'] = f'''
-                    #####价格提醒
-                    > {symbol}
-                    > 当前价格{lastPrice}
-                    > `<={to_price}`
-                    '''
+                    md_msg_list = [
+                        '**价格提醒**',
+                        f'> 交易对: {symbol}',
+                        f'> 当前价格: {lastPrice}',
+                        f'> 提醒条件: <= {to_price}'
+                    ]
+                    md_msg = '  \n'.join(md_msg_list)
+                    a_info['md_msg'] = md_msg
                     trigger = True
                 elif to_price > from_price and lastPrice >= to_price and valid == 'valid':
                     a_info['status'] = 'invalid'
                     a_info['detail_msg'] = f'价格提醒:{symbol}当前价格{lastPrice}>={to_price}'
-                    a_info['md_msg'] = f'''
-                    #####价格提醒
-                    > {symbol}
-                    > 当前价格{lastPrice}
-                    > `>={to_price}`
-                    '''
+                    md_msg_list = [
+                        '**价格提醒**',
+                        f'> 交易对: {symbol}',
+                        f'> 当前价格: {lastPrice}',
+                        f'> 提醒条件: >= {to_price}'
+                    ]
+                    md_msg = '  \n'.join(md_msg_list)
+                    a_info['md_msg'] = md_msg
                     trigger = True
                 else:
                     pass

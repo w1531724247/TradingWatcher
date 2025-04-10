@@ -1,5 +1,5 @@
 # 
-
+from pydoc import plain
 import datetime, sys, json, html, traceback, time, requests
 from tw_api.server.dbmodels.kv_info import KVInfo
 from tw_api.libs.corpwechatbot.app import AppMsgSender
@@ -130,7 +130,7 @@ class NotifyBridge(PathBridge):
         KVInfo.update(key=self.notify_config_info_key, value=data)
         self.notifyConfigInfo = data
 
-    def get_notify_config_info(self, data: dict):
+    def get_notify_config_info(self, data: dict = {}):
         logger.debug(f'{datetime.datetime.now()} {sys._getframe().f_code.co_name} {data}')
         notify_config_info = KVInfo.get_value_by_key(key=self.notify_config_info_key)
         if notify_config_info is not None:
@@ -198,7 +198,7 @@ class NotifyBridge(PathBridge):
 
         return fs_app
 
-    def send_feishu_text_msg(self, title: str, msg_text: str):
+    def send_feishu_text_msg(self, title: str, md_text: str):
         fs_app = self.get_feishu_app()
         try:
             content = {
@@ -207,13 +207,15 @@ class NotifyBridge(PathBridge):
                     "content": [
                         [{
                             "tag": "md",
-                            "text": msg_text
+                            "text": md_text
                         }]
                     ]
                 },
             }
             fs_chat_id = self.notifyConfigInfo['fs_chat_id']
-            msg_req = SendRawMessageReq(receive_id_type='chat_id', receive_id=fs_chat_id, content=content, msg_type='post')
+            md_str = json.dumps(content)
+            content_str = md_str
+            msg_req = SendRawMessageReq(receive_id_type='chat_id', receive_id=fs_chat_id, content=content_str, msg_type='post')
             res, response = fs_app.message.send_raw_message(msg_req)
             logger.debug(f'send_feishu_text_msg--response-->{res} -- {response}')
         except PyLarkError as e:
@@ -243,6 +245,16 @@ class NotifyBridge(PathBridge):
             pass
 
     def send_price_alert_notify(self, data: dict):
+        if self.notifyConfigInfo is None or len(self.notifyConfigInfo) == 0:
+            self.get_notify_config_info(data={})
+        else:
+            pass
+        # 判断self.notifyConfigInfo是否有有效键值对,如果没有键值对,则返回
+        if len(self.notifyConfigInfo) == 0:
+            return
+        else:
+            pass
+            
         try:
             if (self.notifyConfigInfo['enable_wechat']==True) and ('价格提醒' in self.notifyConfigInfo['wc_push_types']):
                 detail_msg = data['md_msg']
@@ -270,7 +282,7 @@ class NotifyBridge(PathBridge):
             else:
                 pass
         except Exception as exp:
-            logger.debug(f'send_price_alert_notify--error--dingding-->{exp}')
+            logger.debug(f'send_price_alert_notify--error--feishu-->{exp}')
         finally:
             pass
         try:
@@ -287,14 +299,26 @@ class NotifyBridge(PathBridge):
             pass
 
     def send_exception_notify(self, data: dict):
+        if self.notifyConfigInfo is None or len(self.notifyConfigInfo) == 0:
+            self.get_notify_config_info(data={})
+        else:
+            pass
+        # 判断self.notifyConfigInfo是否有有效键值对,如果没有键值对,则返回
+        if len(self.notifyConfigInfo) == 0:
+            return
+        else:
+            pass
+
         exception_msg = data['exception_msg']
         now = datetime.datetime.now()
         current_time = now.strftime("%Y-%m-%d %H:%M:%S")
-        detail_msg = f'''
-            #####异常通知\n
-            > 时间: {current_time}\n
-            > 异常详情: {exception_msg}\n
-            '''
+        # 使用数组和join方法构建markdown消息
+        md_msg_list = [
+            '**异常通知**',
+            f'> 时间: {current_time}',
+            f'> 异常详情: {exception_msg}'
+        ]
+        detail_msg = '  \n'.join(md_msg_list)
         try:
             if (self.notifyConfigInfo['enable_wechat']==True) and ('异常通知' in self.notifyConfigInfo['wc_push_types']):
                 self.send_corp_wechat_markdown_msg(md_text=detail_msg)
@@ -316,6 +340,16 @@ class NotifyBridge(PathBridge):
             pass
 
     def send_order_filled_notify(self, data: dict):
+        if self.notifyConfigInfo is None or len(self.notifyConfigInfo) == 0:
+            self.get_notify_config_info(data={})
+        else:
+            pass
+        # 判断self.notifyConfigInfo是否有有效键值对,如果没有键值对,则返回
+        if len(self.notifyConfigInfo) == 0:
+            return
+        else:
+            pass
+
         detail_msg = ''
         try:
             symbol = data['symbol']
@@ -332,16 +366,18 @@ class NotifyBridge(PathBridge):
             clientOrderId = data['clientOrderId']
             orderId = data['orderId']
             # order_str = json.dumps(data)
-            detail_msg = f'''
-            #####订单成交\n
-            > 时间: {filled_time}\n
-            > 订单号: {clientOrderId}\n
-            > 交易对: {symbol}\n
-            > 持仓方向: {positionSide}\n
-            > 买卖方向: {side}\n
-            > 平均价格: {avgPrice}\n
-            > 订单类型: {origType}\n
-            '''
+            # 使用数组和join方法构建markdown消息
+            md_msg_list = [
+                '**订单成交**',
+                f'> 时间: {filled_time}',
+                f'> 订单号: {clientOrderId}',
+                f'> 交易对: {symbol}',
+                f'> 持仓方向: {positionSide}',
+                f'> 买卖方向: {side}',
+                f'> 平均价格: {avgPrice}',
+                f'> 订单类型: {origType}'
+            ]
+            detail_msg = '  \n'.join(md_msg_list)
         except Exception as exp:
             logger.debug(f'send_order_filled_notify--error-->{exp}')
         finally:
