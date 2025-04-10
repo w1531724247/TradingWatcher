@@ -57,7 +57,7 @@ class UMBinance(UMFutures):
         except Exception as exp:
             (code, err_code, err_msg, extra) = exp.args
             self.handle_error_with_code(err_code=err_code)
-            logger.error(f'synced--error-->{exp}')
+            logger.error(f'synced--error--{fn_name}--{str(args)}-->{exp}')
         finally:
             if fn_name not in exclude_fn_list:
                 with self._cache_lock:

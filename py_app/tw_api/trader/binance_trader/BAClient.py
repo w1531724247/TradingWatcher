@@ -48,16 +48,13 @@ class BAClient(BATrader):
     def _clear_timers(self):
         """清理所有定时器"""
         # 原代码缺少对connection_check_timer的清理
-        for timer in [self.updateListenKeyTimer, self.updateInfoTimer, 
-                    self.autoReconnectTimer, self.heartbeat_timer, 
-                    self.connection_check_timer]:  # ✅ 已包含所有定时器
+        for timer in [self.updateListenKeyTimer, self.updateInfoTimer, self.heartbeat_timer, self.connection_check_timer]:  # ✅ 已包含所有定时器
             if timer is not None and timer.is_alive():
                 timer.cancel()
     
     listenKey: str = None
     updateListenKeyTimer : Timer = None
     updateInfoTimer : Timer = None
-    autoReconnectTimer : Timer = None
     connection_check_timer : Timer = None  # 新增连接状态检查定时器
 
     um_http_client: UMBinance = None
@@ -249,38 +246,25 @@ class BAClient(BATrader):
             if self.um_ws_client is not None and self.ticker_watching:
                 self.um_ws_client.ping()
                 logger.debug("已向公共WebSocket发送ping")
-            
+        except Exception as e:
+            logger.error(f"公共WebSocket 发送ping失败: {e}")
+            # 判断输入的错误内容是否是'发送ping失败: socket is already closed.', 如果是则重连
+            if 'socket is already closed' in str(e):
+                self.um_ws_client_connected = False
+            else:
+                pass
+
+        try:
             if self.um_auth_ws_client is not None and self.user_data_watching:
                 self.um_auth_ws_client.ping()
                 logger.debug("已向认证WebSocket发送ping")
         except Exception as e:
-            logger.error(f"发送ping失败: {e}")
-
-    def auto_reconnected_if_need(self):
-        """检查并自动重连WebSocket连接"""
-        logger.debug("执行自动重连检查...")
-        
-        if self.user_data_watching and not self.um_auth_ws_client_connected:
-            logger.warning("认证WebSocket未连接，尝试重连")
-            self._do_reconnect(is_auth=True)
-        
-        if self.ticker_watching and not self.um_ws_client_connected:
-            logger.warning("公共WebSocket未连接，尝试重连")
-            self._do_reconnect(is_auth=False)
-        
-        # 重新启动定时器
-        self.start_autoReconnectTimer()
-    
-    def start_autoReconnectTimer(self):
-        """启动自动重连定时器"""
-        if self.autoReconnectTimer is not None and self.autoReconnectTimer.is_alive():
-            self.autoReconnectTimer.cancel()
-        
-        # 每4.5分钟执行一次
-        self.autoReconnectTimer = Timer(60*4.5, self.auto_reconnected_if_need)
-        self.autoReconnectTimer.daemon = True
-        self.autoReconnectTimer.start()
-        logger.debug("已启动自动重连定时器")
+            logger.error(f"认证WebSocket 发送ping失败: {e}")
+            # 判断输入的错误内容是否是'发送ping失败: socket is already closed.', 如果是则重连
+            if 'socket is already closed' in str(e):
+                self.um_auth_ws_client_connected =  False
+            else:
+                pass
 
     # 在初始化方法中添加启动连接检查
     def initPublicClientIfNeed(self, data: dict):
@@ -310,8 +294,6 @@ class BAClient(BATrader):
             self.watch_ticker()
             # 定时更新本地信息
             self.start_update_local_info_timer()
-            # 启动定时自动重连
-            self.start_autoReconnectTimer()
             # 启动连接状态检查
             self.start_connection_check()
             # 初始化心跳时间
@@ -970,8 +952,11 @@ class BAClient(BATrader):
         quantityPrecision = int(quantityPrecision)
         stepSize = limit_infos['stepSize']
         fixed_amount = self.adapter_float(tick=stepSize, f_num=amount)
+        # 如果fixed_amount是一个负数字符串,则将其转换为正数
+        if fixed_amount.startswith('-'):
+            fixed_amount = fixed_amount[1:]
         logger.debug(f'fixed_amount----{fixed_amount}')
-
+        
         return fixed_amount
 
     def get_place_order_limit_infos(self, symbol: str):

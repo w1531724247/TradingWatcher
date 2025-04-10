@@ -4,6 +4,7 @@ import datetime, sys, json, html, traceback, time, requests
 from tw_api.server.dbmodels.kv_info import KVInfo
 from tw_api.libs.corpwechatbot.app import AppMsgSender
 from tw_api.libs.dingtalkchatbot.chatbot import DingtalkChatbot
+from tw_api.libs.pylark import Lark, SendRawMessageReq, PyLarkError, lark_type
 from threading import Timer
 from tw_api.utils.md5_tools import string_md5
 from tw_api.utils.image_tools import base64_str_from_image_file
@@ -185,6 +186,40 @@ class NotifyBridge(PathBridge):
         xiaoding = xiaoding = self.get_ding_ding_app()
         # Text消息@所有人
         xiaoding.send_markdown(title=title, text=md_text)
+
+    def get_feishu_app(self):
+        fs_app_id = self.notifyConfigInfo['fs_app_id']
+        fs_app_secret = self.notifyConfigInfo['fs_app_secret']
+        fs_custom_url = self.notifyConfigInfo['fs_custom_url']
+        fs_custom_secret = self.notifyConfigInfo['fs_custom_secret']
+        
+        fs_app = Lark(app_id=fs_app_id, app_secret=fs_app_secret,
+                  custom_url=fs_custom_url, custom_secret=fs_custom_secret)
+
+        return fs_app
+
+    def send_feishu_text_msg(self, title: str, msg_text: str):
+        fs_app = self.get_feishu_app()
+        try:
+            content = {
+                "zh_cn": {
+                    "title": title,
+                    "content": [
+                        [{
+                            "tag": "md",
+                            "text": msg_text
+                        }]
+                    ]
+                },
+            }
+            receive_id = self.notifyConfigInfo['fs_app_id']
+            msg_req = SendRawMessageReq(receive_id_type=lark_type.IDType.app_id, receive_id=receive_id, content=content, msg_type=lark_type.MsgType.post)
+            res, response = fs_app.message.send_raw_message(msg_req)
+            logger.debug(f'send_feishu_text_msg--response-->{res} -- {response}')
+        except PyLarkError as e:
+            logger.debug(f'send_feishu_text_msg--error-->{e}')
+        finally:
+            pass
     
     def send_web_hook_msg(self, msg_type: str, data: dict):
         try:
@@ -215,7 +250,27 @@ class NotifyBridge(PathBridge):
             else:
                 pass
         except Exception as exp:
-            logger.debug(f'send_price_alert_notify--error--0-->{exp}')
+            logger.debug(f'send_price_alert_notify--error--wechat-->{exp}')
+        finally:
+            pass
+        try:
+            if (self.notifyConfigInfo['enable_dingding']==True) and ('价格提醒' in self.notifyConfigInfo['dd_push_types']):
+                detail_msg = data['md_msg']
+                self.send_ding_ding_markdown_msg(title='价格提醒', md_text=detail_msg)
+            else:
+                pass
+        except Exception as exp:
+            logger.debug(f'send_price_alert_notify--error--dingding-->{exp}')
+        finally:
+            pass
+        try:
+            if (self.notifyConfigInfo['enable_feishu']==True) and ('价格提醒' in self.notifyConfigInfo['fs_push_types']):
+                detail_msg = data['md_msg']
+                self.send_feishu_text_msg(title='价格提醒', md_text=detail_msg)
+            else:
+                pass
+        except Exception as exp:
+            logger.debug(f'send_price_alert_notify--error--dingding-->{exp}')
         finally:
             pass
         try:
@@ -227,7 +282,7 @@ class NotifyBridge(PathBridge):
             else:
                 pass
         except Exception as exp:
-            logger.debug(f'send_price_alert_notify--error--1-->{exp}')
+            logger.debug(f'send_price_alert_notify--error--webhook-->{exp}')
         finally:
             pass
 
@@ -296,7 +351,7 @@ class NotifyBridge(PathBridge):
         else:
             pass
         try:
-            if (self.notifyConfigInfo['enable_wechat']==True) and ('成交通知' in self.notifyConfigInfo['wc_push_types']):
+            if (self.notifyConfigInfo['enable_wechat']==True) and ('订单成交' in self.notifyConfigInfo['wc_push_types']):
                 self.send_corp_wechat_markdown_msg(md_text=detail_msg)
             else:
                 pass
@@ -304,9 +359,32 @@ class NotifyBridge(PathBridge):
             logger.debug(f'send_order_filled_notify--error--1-->{exp}')
         finally:
             pass
+        
+        # 添加钉钉通知
         try:
-            if (self.notifyConfigInfo['enable_webhook']==True) and ('成交通知' in self.notifyConfigInfo['wh_push_types']):
-                send_timer = Timer(0.1, self.send_web_hook_msg, ('成交通知', data))
+            if (self.notifyConfigInfo['enable_dingding']==True) and ('订单成交' in self.notifyConfigInfo['dd_push_types']):
+                self.send_ding_ding_markdown_msg(title='订单成交', md_text=detail_msg)
+            else:
+                pass
+        except Exception as exp:
+            logger.debug(f'send_order_filled_notify--error--dingding-->{exp}')
+        finally:
+            pass
+        
+        # 添加飞书通知
+        try:
+            if (self.notifyConfigInfo['enable_feishu']==True) and ('订单成交' in self.notifyConfigInfo['fs_push_types']):
+                self.send_feishu_text_msg(title='订单成交', md_text=detail_msg)
+            else:
+                pass
+        except Exception as exp:
+            logger.debug(f'send_order_filled_notify--error--feishu-->{exp}')
+        finally:
+            pass
+            
+        try:
+            if (self.notifyConfigInfo['enable_webhook']==True) and ('订单成交' in self.notifyConfigInfo['wh_push_types']):
+                send_timer = Timer(0.1, self.send_web_hook_msg, ('订单成交', data))
                 send_timer.start()
             else:
                 pass
