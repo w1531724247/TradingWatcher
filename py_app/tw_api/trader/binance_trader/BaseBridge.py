@@ -4,7 +4,7 @@ import datetime, sys, json, html, traceback, time, requests
 from tw_api.server.dbmodels.kv_info import KVInfo
 from tw_api.libs.corpwechatbot.app import AppMsgSender
 from tw_api.libs.dingtalkchatbot.chatbot import DingtalkChatbot
-from tw_api.libs.pylark import Lark, SendRawMessageReq, PyLarkError, lark_type
+from pylark import Lark, SendRawMessageReq, PyLarkError
 from threading import Timer
 from tw_api.utils.md5_tools import string_md5
 from tw_api.utils.image_tools import base64_str_from_image_file
@@ -212,8 +212,8 @@ class NotifyBridge(PathBridge):
                     ]
                 },
             }
-            receive_id = self.notifyConfigInfo['fs_app_id']
-            msg_req = SendRawMessageReq(receive_id_type=lark_type.IDType.app_id, receive_id=receive_id, content=content, msg_type=lark_type.MsgType.post)
+            fs_chat_id = self.notifyConfigInfo['fs_chat_id']
+            msg_req = SendRawMessageReq(receive_id_type='chat_id', receive_id=fs_chat_id, content=content, msg_type='post')
             res, response = fs_app.message.send_raw_message(msg_req)
             logger.debug(f'send_feishu_text_msg--response-->{res} -- {response}')
         except PyLarkError as e:
