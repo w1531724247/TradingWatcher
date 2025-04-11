@@ -357,6 +357,7 @@ class NotifyBridge(PathBridge):
             side = data['side']
             avgPrice = data['avgPrice']
             origType = data['origType']
+            origQty = data['origQty']
             type = data['type']
             od_time = data['time']
             ts = int(od_time)/1000
@@ -367,15 +368,30 @@ class NotifyBridge(PathBridge):
             orderId = data['orderId']
             # order_str = json.dumps(data)
             # 使用数组和join方法构建markdown消息
+            if origType == 'MARKET':
+                priceType = '市价成交'
+            else:
+                priceType = '限价成交'
+
+            if positionSide == 'LONG':
+                if side == 'BUY':
+                    orderType = '开多'
+                else:
+                    orderType = '平多'
+            else:
+                if side == 'BUY':
+                    orderType = '平空'
+                else:
+                    orderType = '开空'
+            
             md_msg_list = [
                 '**订单成交**',
-                f'> 时间: {filled_time}',
-                f'> 订单号: {clientOrderId}',
                 f'> 交易对: {symbol}',
-                f'> 持仓方向: {positionSide}',
-                f'> 买卖方向: {side}',
+                f'> 订单类型: {orderType}',
                 f'> 平均价格: {avgPrice}',
-                f'> 订单类型: {origType}'
+                f'> 订单数量: {origQty}',
+                f'> 成交类型: {priceType}',
+                f'> 时间: {filled_time}'
             ]
             detail_msg = '  \n'.join(md_msg_list)
         except Exception as exp:

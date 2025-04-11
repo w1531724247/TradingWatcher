@@ -26,7 +26,7 @@ class BAClient(BATrader):
     
     # 添加重连相关参数
     reconnect_attempts = 0
-    max_reconnect_attempts = 10
+    max_reconnect_attempts = 20
     base_reconnect_delay = 5  # 基础重连延迟(秒)
     max_reconnect_delay = 300  # 最大重连延迟(秒)
     
