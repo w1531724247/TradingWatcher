@@ -516,15 +516,19 @@ class BAClient(BATrader):
         self.priceAlertInfos = data
 
     def getFakerOpenOrders(self, data: dict):
-        if self.faker_order_list == None:
-            faker_order_list = KVInfo.get_value_by_key(key=self.faker_order_list_key)
-            if faker_order_list is None:
-                faker_order_list = []
+        if self.faker_order_list == None or self.faker_order_list == []:
+            if self.ba_api_key is not None and self.ba_api_key != '':
+                faker_order_list = KVInfo.get_value_by_key(key=self.faker_order_list_key)
+                if faker_order_list is None:
+                    faker_order_list = []
+                else:
+                    pass
             else:
-                pass
+                faker_order_list = []
             self.faker_order_list = faker_order_list
         else:
             pass
+
 
         return {
             'faker_order_list': self.faker_order_list
@@ -625,6 +629,7 @@ class BAClient(BATrader):
         else:
             pass
         
+        trigger_list = []
         for symbol in self.priceAlertInfos.keys():
             ticker_info = self.tickers.get(symbol, None)
             if ticker_info is None:
@@ -641,6 +646,9 @@ class BAClient(BATrader):
                 to_price = float(to_price)
                 trigger = False
                 valid = a_info['status']
+                # 获取并格式化当前时间
+                current_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+
                 if to_price < from_price and lastPrice <= to_price and valid == 'valid':
                     a_info['status'] = 'invalid'
                     a_info['detail_msg'] = f'价格提醒:{symbol}当前价格{lastPrice}<={to_price}'
@@ -648,7 +656,8 @@ class BAClient(BATrader):
                         '**价格提醒**',
                         f'> 交易对: {symbol}',
                         f'> 当前价格: {lastPrice}',
-                        f'> 提醒条件: <= {to_price}'
+                        f'> 提醒条件: <= {to_price}',
+                        f'> 触发时间: {current_time}'
                     ]
                     md_msg = '  \n'.join(md_msg_list)
                     a_info['md_msg'] = md_msg
@@ -660,16 +669,20 @@ class BAClient(BATrader):
                         '**价格提醒**',
                         f'> 交易对: {symbol}',
                         f'> 当前价格: {lastPrice}',
-                        f'> 提醒条件: >= {to_price}'
+                        f'> 提醒条件: >= {to_price}',
+                        f'> 触发时间: {current_time}'
                     ]
                     md_msg = '  \n'.join(md_msg_list)
                     a_info['md_msg'] = md_msg
                     trigger = True
                 else:
                     pass
+
                 if trigger:
-                    self.play_price_alert_audio(data=a_info)
-                    self.send_price_alert_notify(data=a_info)
+                    if symbol not in trigger_list:
+                        trigger_list.append(symbol)
+                        self.play_price_alert_audio(data=a_info)
+                        self.send_price_alert_notify(data=a_info)
                 else:
                     temp_alt_infos.append(a_info)
             if len(alt_infos) != len(temp_alt_infos):
@@ -731,6 +744,11 @@ class BAClient(BATrader):
     def getPositions(self, data: dict = {}):
         if self.positions is None:
             self.positions = {}
+        if self.ba_api_key is None or self.ba_api_key == '':
+            self.positions = {}
+        else:
+            pass
+
 
         return self.positions
 
@@ -738,6 +756,10 @@ class BAClient(BATrader):
     def getOpenOrders(self, data: dict = {}):
         if self.openOrders is None:
             self.openOrders = {}
+        if self.ba_api_key is None or self.ba_api_key == '':
+            self.openOrders = {}
+        else:
+            pass
 
         return self.openOrders
 

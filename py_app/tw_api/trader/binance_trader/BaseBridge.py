@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import linecache
+from pathlib import Path
 
 class BaseBridge(object):
     _instance = None
@@ -32,15 +33,54 @@ class BaseBridge(object):
 class PathBridge(BaseBridge):
 
     # 放入缓存防止内存过载
-    def get_line_count(self, filename):
-        count = 0
-        with open(filename, 'r') as f:
-            while True:
-                buffer = f.read(1024 * 1)
-                if not buffer:
-                    break
-                count += buffer.count('\n')
-        return count
+    def get_line_count(self, file_path):
+        try:
+            # 确保文件存在
+            if not os.path.exists(file_path):
+                logger.error(f"文件不存在: {file_path}")
+                return 0
+                
+            # 检查文件大小
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                logger.warning(f"文件存在但为空: {file_path}")
+                return 0
+                
+            # 检查文件权限
+            if not os.access(file_path, os.R_OK):
+                logger.error(f"没有读取文件的权限: {file_path}")
+                return 0
+                
+            # 读取文件行数
+            count = 0
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                while True:
+                    buffer = f.read(8192)  # 增加缓冲区大小提高效率
+                    if not buffer:
+                        break
+                    count += buffer.count('\n')
+        
+            logger.debug(f"文件 {file_path} 共有 {count} 行")
+            return count
+            
+        except PermissionError as e:
+            logger.error(f"权限错误: {e}")
+            return 0
+        except UnicodeDecodeError as e:
+            logger.error(f"编码错误: {e}")
+            # 尝试使用二进制模式读取
+            try:
+                count = 0
+                with open(file_path, 'rb') as f:
+                    for line in f:
+                        count += 1
+                return count
+            except Exception as e2:
+                logger.error(f"二进制模式读取失败: {e2}")
+                return 0
+        except Exception as e:
+            logger.error(f"读取文件行数时发生错误: {e}")
+            return 0
     
     def open_py_log_file(self, data: dict):
         logger.debug(f'{datetime.datetime.now()} {sys._getframe().f_code.co_name} {data}')
@@ -113,6 +153,21 @@ class PathBridge(BaseBridge):
                 result = {}
 
             return result
+    
+    def record_script_logs(self, data: dict):
+        # logger.debug(f'{datetime.datetime.now()} {sys._getframe().f_code.co_name} {data}')
+        log_type = data['type']
+        log_text = data['text']
+        if log_type == 'error':
+            logger.error(f'{datetime.datetime.now()} {log_text}')
+        elif log_type == 'warning':
+            logger.warning(f'{datetime.datetime.now()} {log_text}')
+        elif log_type == 'info':
+            logger.info(f'{datetime.datetime.now()} {log_text}')
+        else:
+            logger.debug(f'{datetime.datetime.now()} {log_text}')
+        return {}
+        
 
 class NotifyBridge(PathBridge):
     
@@ -254,7 +309,6 @@ class NotifyBridge(PathBridge):
             return
         else:
             pass
-            
         try:
             if (self.notifyConfigInfo['enable_wechat']==True) and ('价格提醒' in self.notifyConfigInfo['wc_push_types']):
                 detail_msg = data['md_msg']

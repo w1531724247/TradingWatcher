@@ -24,8 +24,10 @@ from .util import is_image, is_voice, is_video, is_file
 from .config import OFFICIAL_APIS
 
 
-TOKEN_PATH = PathTools.app_db_dir().joinpath('crpwc_token.json')  # 存储在本项目根目录下
-
+TOKEN_PATH = PathTools.app_db_dir().joinpath('crpwc_token.json')  # 存储在指定目录下
+# 如果文件不存在，则创建
+if not TOKEN_PATH.exists():
+    TOKEN_PATH.write_text('{}')
 
 class AppMsgSender(MsgSender):
     """

@@ -7,6 +7,7 @@ import shutil
 from tw_api.const import is_Windows
 import appdirs
 import subprocess
+import tempfile, os
 
 class PathTools:
     js_port = 10689
@@ -26,6 +27,46 @@ class PathTools:
             return cls._appDataPath
 
     @classmethod
+    def create_dir_if_not_exists(cls, dir_path):
+        try:
+            # 确保路径是字符串或Path对象
+            path_obj = pathlib.Path(dir_path)
+            
+            # 检查路径是否已存在
+            if path_obj.exists():
+                if not path_obj.is_dir():
+                    print(f"警告: 路径存在但不是目录: {dir_path}")
+                    # 尝试使用不同的路径名
+                    path_obj = pathlib.Path(str(dir_path) + "_dir")
+                return path_obj
+            
+            # 尝试使用pathlib创建目录
+            path_obj.mkdir(parents=True, exist_ok=True)
+            
+            # 验证目录是否创建成功
+            if not path_obj.exists():
+                print(f"警告: pathlib创建目录失败，尝试使用os.makedirs: {dir_path}")
+                # 使用os.makedirs作为备选方案
+                os.makedirs(str(path_obj), exist_ok=True)
+            
+            return path_obj
+            
+        except PermissionError as e:
+            print(f"权限错误: 无法创建目录 {dir_path}: {e}")
+            # 尝试在临时目录创建
+            temp_dir = os.path.join(tempfile.gettempdir(), os.path.basename(str(dir_path)))
+            print(f"尝试在临时目录创建: {temp_dir}")
+            os.makedirs(temp_dir, exist_ok=True)
+            return pathlib.Path(temp_dir)
+        except Exception as e:
+            print(f"创建目录时出错: {dir_path}: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # 返回当前目录作为最后的备选方案
+            return pathlib.Path(".")
+    
+    @classmethod
     def app_file_dir(cls):
         return Path(cls.getAppDataPath())
 
@@ -34,46 +75,46 @@ class PathTools:
         app_data_path = cls.app_file_dir()
         # 根据操作系统选择目录路径
         if is_Windows:  # Windows
-            pro_data_path = app_data_path / 'common'
+            pro_data_path = app_data_path.joinpath('common')
             if not pro_data_path.exists():
-                pro_data_path.mkdir(parents=True, exist_ok=True)
+                cls.create_dir_if_not_exists(pro_data_path)
             subprocess.run(['attrib', '+h', str(pro_data_path)], check=True)
         else:  # Unix-like
-            pro_data_path = app_data_path / '.common'
+            pro_data_path = app_data_path.joinpath('.common')
             if not pro_data_path.exists():
-                pro_data_path.mkdir(parents=True, exist_ok=True)
+                cls.create_dir_if_not_exists(pro_data_path)
         return pro_data_path
 
     @classmethod
     def app_user_data_dir(cls):
         app_user_data_dir = cls.app_data_file_dir().joinpath(cls.u_email)
-        pathlib.Path(app_user_data_dir).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(app_user_data_dir)
         return app_user_data_dir 
 
     @classmethod
     def app_db_dir(cls):
         dir_path = cls.app_user_data_dir().joinpath('db')
         # 如果文件夹不存在则创建
-        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(dir_path)
         return dir_path
 
     @classmethod
     def app_temp_dir(cls):
         app_temp_dir = cls.app_file_dir().joinpath('PYStatic')
-        pathlib.Path(app_temp_dir).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(app_temp_dir)
         return app_temp_dir
 
     @classmethod
     def app_user_temp_file_dir(cls):
         # 用户缓存数据不为空
         dir_path = cls.app_temp_dir().joinpath(cls.u_email)
-        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(dir_path)
         return dir_path
 
     @classmethod
     def app_temp_image_file_dir(cls):
         dir_path = cls.app_user_temp_file_dir().joinpath('images')
-        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(dir_path)
         return dir_path
 
     @classmethod
@@ -84,7 +125,7 @@ class PathTools:
     def app_temp_log_file_dir(cls):
         dir_path = cls.app_temp_dir().joinpath('logs')
         # 如果文件夹不存在则创建
-        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(dir_path)
         return dir_path
     
     @classmethod
@@ -100,14 +141,14 @@ class PathTools:
     def project_assets_dir(cls):
         project_path = cls.project_path()
         project_assets_dir = project_path.joinpath('assets')
-        pathlib.Path(project_assets_dir).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(project_assets_dir)
         return project_assets_dir
 
     @classmethod
     def app_audio_file_dir(cls):
         app_audio_file_dir = cls.project_assets_dir().joinpath('audio')
         # 如果文件夹不存在则创建
-        pathlib.Path(app_audio_file_dir).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(app_audio_file_dir)
         return app_audio_file_dir 
    
 
@@ -141,7 +182,7 @@ class PathTools:
 
     @classmethod
     def make_dir_if_not_exists(cls, dir_path: str):
-        pathlib.Path(dir_path).mkdir(parents=True, exist_ok=True)
+        cls.create_dir_if_not_exists(dir_path)
 
     @classmethod
     def delete_file(cls, file_path: str):

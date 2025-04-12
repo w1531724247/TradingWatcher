@@ -961,7 +961,10 @@ class BridgePlayer(BridgeMonitor):
         logger.debug(f'{datetime.datetime.now()} {sys._getframe().f_code.co_name} {data}')
         a_path = PathTools.app_audio_file_dir().joinpath('price_alert2.wav')
         logger.debug(f'触发价格提醒警报-a_path->{a_path}')
-        AudioTools.play_audio(str(a_path))
+        try:
+            AudioTools.play_audio(str(a_path))
+        except Exception as exp:
+            logger.error(f'play_price_alert_audio--error-->{exp}')
 
 class JSBridge(BridgePlayer):
     pass
