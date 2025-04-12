@@ -21,5 +21,5 @@ opencv-python
 boto3
 pandas-ta
 apscheduler
-simpleaudio
+pygame
 pylark
